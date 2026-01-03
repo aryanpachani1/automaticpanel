@@ -1,121 +1,33 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>High Accuracy Betfair Load Extractor</title>
-
-<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="https://docs.opencv.org/4.x/opencv.js"></script>
-
-<style>
-body{font-family:Arial;background:#0f172a;color:#fff;padding:20px}
-.card{background:#020617;padding:15px;border-radius:10px;margin-bottom:15px}
-input{padding:6px;width:95%}
-.good{color:#22c55e}
-.bad{color:#ef4444}
-button{padding:10px 25px;font-size:16px}
-</style>
-</head>
-
-<body>
-
-<h2>🔍 High Accuracy Betfair Screenshot Load Calculator</h2>
-
-<div class="card">
-<b>Total Matched (£)</b><br>
-<input id="totalMatched">
-</div>
-
-<div class="card">
-<b>Upload Screenshot (Team A)</b><br>
-<input type="file" accept="image/*" onchange="process(this,'a')">
-<p id="sa"></p>
-</div>
-
-<div class="card">
-<b>Upload Screenshot (Team B)</b><br>
-<input type="file" accept="image/*" onchange="process(this,'b')">
-<p id="sb"></p>
-</div>
-
-<button onclick="calc()">CALCULATE LOAD</button>
-
-<div class="card" id="out"></div>
-
 <script>
-function preprocess(img){
- let mat=cv.imread(img);
- cv.cvtColor(mat,mat,cv.COLOR_RGBA2GRAY);
- cv.threshold(mat,mat,120,255,cv.THRESH_BINARY);
- return mat;
+let history = [];
+
+function snapshot(){
+  let data = {
+    time: new Date().toLocaleTimeString(),
+    oddsA: Number(document.getElementById("oddsA").value),
+    loadA: Number(document.getElementById("loadA").value),
+    oddsB: Number(document.getElementById("oddsB").value),
+    loadB: Number(document.getElementById("loadB").value)
+  };
+  history.push(data);
+  analyze();
 }
 
-function process(inp,p){
- let status=document.getElementById(p=="a"?"sa":"sb");
- status.innerText="Processing image...";
- let img=new Image();
- img.src=URL.createObjectURL(inp.files[0]);
+function analyze(){
+  if(history.length < 2) return;
+  let prev = history[history.length-2];
+  let curr = history[history.length-1];
 
- img.onload=()=>{
-  let canvas=document.createElement("canvas");
-  canvas.width=img.width;
-  canvas.height=img.height;
-  let ctx=canvas.getContext("2d");
-  ctx.drawImage(img,0,0);
+  let loadChange = curr.loadA - prev.loadA;
+  let oddsChange = curr.oddsA - prev.oddsA;
 
-  let mat=preprocess(canvas);
-  cv.imshow(canvas,mat);
+  let signal = "WAIT";
+  if(loadChange > 0 && oddsChange < 0) signal = "✅ REAL MOVE";
+  else if(loadChange > 0 && oddsChange > 0) signal = "⚠️ FAKE MOVE";
+  else if(Math.abs(loadChange) < 50) signal = "🧊 BOOKIE CONTROL";
 
-  Tesseract.recognize(canvas,"eng",{tessedit_char_whitelist:"0123456789.£"})
-  .then(({data:{text}})=>{
-    extract(text,p);
-    status.innerText="Extracted ✔ (verify once)";
-  });
- }
+  document.getElementById("signal").innerText = signal;
 }
 
-function extract(text,p){
- let odds=[...text.matchAll(/\b[1-9]\d?\.\d{2}\b/g)].map(x=>x[0]);
- let amt=[...text.matchAll(/\£\d{1,3}(?:,\d{3})*(?:\.\d+)?/g)]
-          .map(x=>x[0].replace(/[£,]/g,""));
-
- odds=odds.slice(0,6);
- amt=amt.slice(0,6);
-
- window[p+"back"]={
-  odds:odds.slice(0,3),
-  amt:amt.slice(0,3)
- };
- window[p+"lay"]={
-  odds:odds.slice(3,6),
-  amt:amt.slice(3,6)
- };
-}
-
-function load(p){
- let b=window[p+"back"],l=window[p+"lay"];
- let back=b.amt.reduce((a,b)=>a+Number(b),0);
- let lay=l.amt.reduce((s,a,i)=>s+(a*(l.odds[i]-1)),0);
- return back-lay;
-}
-
-function calc(){
- let A=load("a"),B=load("b");
- let t=Number(document.getElementById("totalMatched").value||0);
-
- let minus=A>0?"Team A":"Team B";
- let plus=A>0?"Team B":"Team A";
-
- document.getElementById("out").innerHTML=`
- <h3>RESULT</h3>
- Total Matched: £${t}<br><br>
- Team A Load: <b class="${A>0?'bad':'good'}">£${A.toFixed(2)}</b><br>
- Team B Load: <b class="${B>0?'bad':'good'}">£${B.toFixed(2)}</b><br><br>
- <b>Bookie Minus:</b> ${minus}<br>
- <b>Bookie Plus:</b> ${plus}
- `;
-}
+setInterval(snapshot, 30000); // every 30 sec
 </script>
-
-</body>
-</html>
